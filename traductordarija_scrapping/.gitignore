@@ -1,0 +1,16 @@
+# Fichiers générés par le script
+*.png
+*.txt
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environnement virtuel
+venv/
+env/
+ENV/
+
+# Logs
+*.log 
