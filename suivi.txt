@@ -1,0 +1,191 @@
+=== Journal des modifications du projet ===
+
+[13/03/2024]
+- Création de l'environnement virtuel (venv)
+  * Première tentative : python -m venv venv
+  * Deuxième tentative : python -m venv venv --upgrade-deps
+  * Troisième tentative réussie : python -m venv venv --system-site-packages
+  * Activation réussie via CMD avec venv\Scripts\activate.bat
+  * Objectif : Isoler les dépendances du projet 
+  * État : SUCCÈS - Environnement virtuel créé et activé 
+
+- Configuration de l'API Hugging Face
+  * Installation des packages :
+    - transformers
+    - datasets
+    - huggingface-hub
+    - python-dotenv
+    - pandas
+    - pyarrow
+  * Configuration :
+    - .env (token sécurisé)
+  * État : SUCCÈS - API Hugging Face configurée et fonctionnelle
+
+- Configuration de l'environnement
+  * Environnement Python configuré et fonctionnel
+  * Terminal administrateur disponible via launch_admin_powershell.bat
+  * Nettoyage : Suppression des fichiers de configuration temporaires
+    - setup_path.bat
+    - setup_python_path.ps1
+    - test_admin.ps1
+    - huggingface_test.py
+
+- Exploration du Dataset Darija-SFT-Mixture
+  * Type : Dataset d'instructions en Darija
+  * Taille : 458K échantillons
+  * Structure des données :
+    - dataset (string)
+    - id (string)
+    - messages (liste de {content, role})
+    - direction (string)
+    - metadata
+  * Caractéristiques :
+    - Licence : ODC-BY
+    - Tâches : question-answering, conversational, text-generation
+    - Format : Parquet (2 fichiers train)
+  * État : SUCCÈS - Données accessibles via API REST
+
+- Implémentation de l'extraction et du stockage des données (darija_parquet_to_db.py)
+  * Processus :
+    1. Récupération des URLs des fichiers Parquet via API REST
+    2. Téléchargement des fichiers Parquet
+    3. Conversion et stockage en base de données SQLite
+  * Structure de la base de données :
+    - Table conversations : id, dataset_name, direction, metadata
+    - Table messages : id, conversation_id, role, content
+  * Fonctionnalités :
+    - Téléchargement progressif
+    - Gestion de la mémoire optimisée
+    - Logging des opérations
+    - Nettoyage automatique des fichiers temporaires
+  * État : EN COURS - Script prêt pour l'exécution 
+
+[14/03/2024]
+- Amélioration du système d'extraction et de traitement des données
+  * Ajout de nouvelles fonctionnalités :
+    - Statistiques détaillées du dataset via API Hugging Face
+    - Téléchargement optimisé via huggingface_hub
+    - Sauvegarde des statistiques en JSON
+    - Analyse détaillée des données traitées
+  * Modifications :
+    - Utilisation de l'API pour les métadonnées
+    - Utilisation de huggingface_hub pour les fichiers
+    - Ajout de métriques de qualité des données
+  * Fichiers générés :
+    - dataset_stats.json : Statistiques globales du dataset
+    - data_stats.json : Statistiques des données traitées
+  * État : EN COURS - Pipeline optimisé prêt pour l'exécution 
+
+[14/03/2024 - Suite]
+- Nettoyage du projet
+  * Suppression des fichiers redondants :
+    - darija_api_endpoints.py (fonctionnalités intégrées dans darija_data_pipeline.py)
+    - darija_data_manager.py (fonctionnalités intégrées dans darija_data_pipeline.py)
+    - darija_parquet_to_db.py (fonctionnalités intégrées dans darija_data_pipeline.py)
+    - dataset_info.json (informations gérées dynamiquement via l'API)
+  * Structure actuelle du projet :
+    - darija_data_pipeline.py : Pipeline principal
+    - requirements.txt : Dépendances du projet
+    - .env : Configuration des tokens
+    - data/ : Dossier des données
+  * État : SUCCÈS - Structure du projet optimisée 
+
+[14/03/2024 - Mise à jour]
+- Réorganisation du code en modules spécialisés
+  * Séparation des fonctionnalités :
+    - darija_stats_api.py : Module pour les statistiques via API Hugging Face
+      > Récupération des métadonnées du dataset
+      > Compilation des statistiques détaillées
+      > Sauvegarde au format JSON
+    - darija_parquet_downloader.py : Module pour les fichiers Parquet
+      > Liste des fichiers disponibles
+      > Téléchargement optimisé via huggingface_hub
+      > Gestion des fichiers temporaires
+  * Structure des dossiers :
+    - data/stats/ : Statistiques du dataset
+    - data/raw/ : Fichiers Parquet téléchargés
+  * Logs séparés :
+    - stats_api.log : Journal des opérations API
+    - parquet_downloader.log : Journal des téléchargements
+  * État : SUCCÈS - Modules indépendants et fonctionnels 
+
+[14/03/2024 - Nettoyage final]
+- Suppression des derniers fichiers redondants
+  * Fichiers supprimés :
+    - darija_data_pipeline.py (remplacé par les modules spécialisés)
+    - launch_admin_powershell.bat (non nécessaire pour l'exécution)
+  * Structure finale du projet :
+    - darija_stats_api.py : Module des statistiques
+    - darija_parquet_downloader.py : Module de téléchargement
+    - requirements.txt : Dépendances du projet
+    - .env : Configuration des tokens
+    - data/ : Dossier des données
+      > stats/ : Statistiques du dataset
+      > raw/ : Fichiers Parquet
+  * État : SUCCÈS - Structure finale optimisée et propre 
+
+[14/03/2024 - Restructuration]
+- Réorganisation finale du projet
+  * Structure des dossiers :
+    - darija_modules/ : Modules Python
+      > dataset_statistics.py : Module des statistiques
+      > parquet_downloader.py : Module de téléchargement
+    - darija_data/ : Données du projet
+      > parquet_files/ : Fichiers Parquet bruts
+      > dataset_statistics/ : Statistiques du dataset
+      > execution_logs/ : Journaux d'exécution
+  * Fichiers de configuration :
+    - huggingface_token.env : Token d'accès
+    - project_dependencies.txt : Dépendances
+  * État : SUCCÈS - Structure finale claire et explicite 
+
+[14/03/2024 - Nettoyage supplémentaire]
+- Suppression de l'ancien dossier data/
+  * Confirmation que toutes les données ont été migrées vers :
+    - darija_data/parquet_files/ (fichiers Parquet)
+    - darija_data/dataset_statistics/ (statistiques)
+    - darija_data/execution_logs/ (logs)
+  * État : SUCCÈS - Ancien dossier supprimé, structure actuelle propre 
+
+[14/03/2024 - Optimisation du format de données]
+- Modification du module de téléchargement pour conversion en CSV
+  * Ajout de la conversion automatique Parquet vers CSV :
+    - Nouveau dossier darija_data/csv_files/
+    - Conversion immédiate après téléchargement
+    - Suppression automatique des fichiers Parquet après conversion
+  * Avantages :
+    - Format plus accessible et lisible
+    - Meilleure compatibilité avec les outils d'analyse
+    - Économie d'espace (suppression des Parquet)
+  * État : SUCCÈS - Données disponibles uniquement en CSV
+
+[14/03/2024 - Automatisation du pipeline]
+- Création du script d'automatisation pipeline_automatisation.py
+  * Fonctionnalités :
+    - Orchestration des modules dans l'ordre :
+      1. dataset_statistics.py : Statistiques du dataset
+      2. parquet_downloader.py : Téléchargement et conversion en CSV
+    - Gestion des erreurs et des dépendances
+    - Logging détaillé des opérations
+    - Mesure des temps d'exécution
+  * Avantages :
+    - Exécution automatisée de bout en bout
+    - Meilleure traçabilité des opérations
+    - Gestion cohérente des erreurs
+  * État : SUCCÈS - Pipeline automatisé opérationnel
+
+[14/03/2024 - Amélioration des statistiques]
+- Enrichissement du module de statistiques dataset_statistics.py
+  * Nouvelles analyses :
+    - Statistiques détaillées sur les conversations
+    - Distribution des rôles (assistant, user)
+    - Analyse de la longueur des messages
+    - Métriques de qualité des données
+  * Nouveau format de rapport :
+    - Rapport Markdown détaillé et structuré
+    - Visualisation claire des statistiques
+    - Métriques formatées et calculées
+  * Fichiers générés :
+    - dataset_stats.json : Données brutes
+    - dataset_report.md : Rapport formaté
+  * État : SUCCÈS - Statistiques enrichies et plus détaillées
