@@ -4,7 +4,7 @@ import time
 import os
 
 # Définition de la fonction de traduction
-def traduire_texte_traductordarija(phrase, url="https://www.traductordarija.com/fr/"):
+def traduire_texte_traductordarija(phrase, url="https://www.learnmoroccan.com/fr/translator"):
     print(f"Tentative de traduction de : '{phrase}'")
     try:
         with sync_playwright() as p:
@@ -20,93 +20,56 @@ def traduire_texte_traductordarija(phrase, url="https://www.traductordarija.com/
             # Prendre une capture d'écran de la page initiale
             page.screenshot(path="page_initiale.png")
             print("Capture d'écran initiale sauvegardée")
-
-            # Remplir le textarea avec la phrase en français
-            print("Remplissage du champ de texte...")
-            page.fill('#text_to_translate', phrase)
-
-            # Cliquer sur le bouton de traduction avec le bon sélecteur
-            print("Clic sur le bouton de traduction...")
-            # Utiliser le sélecteur correct pour le bouton
-            page.click('button.btn.btn-primary[onclick="translateText()"]')
             
-            # Attendre un peu pour voir ce qui se passe
-            print("Attente de 5 secondes...")
-            page.wait_for_timeout(5000)
+            # Sélectionner la langue marocain
+            print("Sélection de la langue marocaine...")
+            page.locator("div.text-sm.sm\\:text-base:has-text('Marocain')").click()
+            print("Langue marocaine sélectionnée")
             
-            # Prendre une capture d'écran après le clic
-            page.screenshot(path="apres_clic.png")
-            print("Capture d'écran après clic sauvegardée")
-
-            # Essayer plusieurs sélecteurs pour trouver le résultat
-            print("Recherche du résultat avec différents sélecteurs...")
-            selectors = [
-                '#translation_result',
-                '.translation-result',
-                'textarea[name="translation_result"]',
-                'textarea.result',
-                'div.result textarea',
-                'textarea:nth-child(2)'
-            ]
+            # Activer le bouton toggle
+            print("Activation du bouton toggle...")
+            # Utiliser le XPath exact fourni par l'utilisateur
+            page.locator("/html/body/div/div[2]/div[3]/div/label/div/div").click()
+            print("Bouton toggle activé")
             
-            traduction = None
-            for selector in selectors:
-                try:
-                    print(f"Essai du sélecteur : {selector}")
-                    element = page.query_selector(selector)
-                    if element:
-                        print(f"Sélecteur trouvé : {selector}")
-                        # Essayer différentes méthodes pour obtenir le texte
-                        try:
-                            traduction = element.input_value()
-                            print(f"Valeur obtenue avec input_value() : '{traduction}'")
-                            break
-                        except:
-                            try:
-                                traduction = element.text_content()
-                                print(f"Valeur obtenue avec text_content() : '{traduction}'")
-                                break
-                            except:
-                                print("Impossible d'obtenir le texte de l'élément")
-                except Exception as e:
-                    print(f"Erreur avec le sélecteur {selector} : {str(e)}")
+            # Entrer le texte à traduire
+            print(f"Saisie du texte : '{phrase}'")
+            page.fill("textarea.pl-1.w-full.bg-white.outline-none.overflow-hidden.pt-2.resize-none.min-h-28.sm\\:min-h-48", phrase)
             
-            # Si aucun sélecteur n'a fonctionné, essayer de récupérer tous les textarea
-            if not traduction:
-                print("Tentative de récupération de tous les textarea...")
-                textareas = page.query_selector_all('textarea')
-                print(f"Nombre de textarea trouvés : {len(textareas)}")
-                for i, textarea in enumerate(textareas):
-                    try:
-                        value = textarea.input_value()
-                        print(f"Textarea {i+1} : '{value}'")
-                        # Si ce n'est pas le texte d'entrée, c'est probablement la traduction
-                        if value != phrase:
-                            traduction = value
-                            print(f"Traduction probable trouvée : '{traduction}'")
-                            break
-                    except Exception as e:
-                        print(f"Erreur avec textarea {i+1} : {str(e)}")
+            # Cliquer sur le bouton de traduction
+            print("Clic sur le bouton de traduction")
+            page.locator("button.font-normal.shadow-sm.text-darkerlime.bg-lime.hover\\:bg-smoothlime.disabled\\:text-textGrey.transition.duration-150.disabled\\:bg-lightgrey.disabled\\:text-darkerlime.min-w-\\[130px\\].disabled\\:text-textGrey.p-3.px-8.flex.flex-row.gap-3.items-center.z-10.w-full.rounded-xl.justify-center.py-5.text-xl.font-normal.bg-blue-500.hover\\:bg-blue-600:has-text('Traduire')").click()
             
-            # Prendre une capture d'écran finale
-            page.screenshot(path="resultat_final.png")
-            print("Capture d'écran finale sauvegardée")
+            # Attendre que la traduction soit disponible
+            print("Attente du résultat de la traduction...")
+            page.wait_for_selector("/html/body/div/div[2]/div[4]/p[2]", state="visible", timeout=10000)
             
-            # Sauvegarder le HTML de la page pour analyse
-            html = page.content()
-            with open("page_html.txt", "w", encoding="utf-8") as f:
-                f.write(html)
-            print("HTML de la page sauvegardé")
-
+            # Récupérer le résultat de la traduction
+            traduction = page.text_content("/html/body/div/div[2]/div[4]/p[2]")
+            print(f"Traduction obtenue : {traduction}")
+            
+            # Récupérer également la version en caractères arabes si disponible
+            try:
+                traduction_arabe = page.text_content("/html/body/div/div[2]/div[4]/p[1]")
+                print(f"Traduction en caractères arabes : {traduction_arabe}")
+                # Combiner les deux traductions
+                traduction_complete = f"{traduction}\n{traduction_arabe}"
+            except Exception as e:
+                print(f"Impossible de récupérer la version en caractères arabes : {e}")
+                traduction_complete = traduction
+            
+            # Prendre une capture d'écran du résultat
+            page.screenshot(path="resultat_traduction.png")
+            print("Capture d'écran du résultat sauvegardée")
+            
+            # Fermer le navigateur
             browser.close()
             
-            if traduction:
-                return traduction
-            else:
-                return "Traduction non trouvée"
+            return traduction_complete
     except Exception as e:
-        print(f"Erreur lors de la traduction : {str(e)}")
-        return f"Erreur: {str(e)}"
+        print(f"Erreur lors de la traduction : {e}")
+        return None
+
 
 # Exemple d'utilisation :
 if __name__ == "__main__":
