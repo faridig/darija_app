@@ -17,6 +17,19 @@ def traduire_texte_traductordarija(phrase, url="https://www.learnmoroccan.com/fr
             page.goto(url)
             print("Page chargée")
             
+            # Gérer le bouton initial qui apparaît lors de la première ouverture
+            try:
+                print("Vérification de la présence du bouton initial...")
+                # Utiliser un timeout court pour ne pas bloquer si le bouton n'est pas présent
+                if page.locator("/html/body/div/div[2]/div[2]/button").count() > 0:
+                    print("Bouton initial détecté, clic sur le bouton...")
+                    page.locator("/html/body/div/div[2]/div[2]/button").click()
+                    print("Bouton initial cliqué")
+                else:
+                    print("Bouton initial non détecté, poursuite du script")
+            except Exception as e:
+                print(f"Erreur lors de la gestion du bouton initial : {e}, poursuite du script")
+            
             # Prendre une capture d'écran de la page initiale
             page.screenshot(path="page_initiale.png")
             print("Capture d'écran initiale sauvegardée")
