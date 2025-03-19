@@ -1,0 +1,2 @@
+le fichier data_Darija-SFT-Mixture/darija_modules/parquet_downloader.py télécharge les parquets depuis huggingface et les envoient sur azure
+ensuite nettoyage_csv.py les récupere d'azure le nettoie et en fait un csv brut puis un csv 
