@@ -1,31 +1,32 @@
 import os
+import re
+import json
+import logging
+import pandas as pd
 from dotenv import load_dotenv
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import explode, length, col, to_json
-import pandas as pd
-import json
-import ast
-from typing import List, Dict
-import re
-import logging
-from collections import defaultdict
+from pyspark.sql.functions import col
 
-# Charger les variables d'environnement
+# ---------------------------------------------------------------------------
+# Configuration du logging et chargement des variables d'environnement
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 load_dotenv()
 
-# Vérifier si les identifiants Azure sont bien définis
 storage_account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
 storage_account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY")
 container_name = os.getenv("AZURE_CONTAINER_NAME")
 parquet_folder = "data/"
 
 if not storage_account_name or not storage_account_key or not container_name:
-    raise ValueError("❌ ERREUR : Vérifie que les variables AZURE_STORAGE_ACCOUNT_NAME, AZURE_STORAGE_ACCOUNT_KEY et AZURE_CONTAINER_NAME sont bien définies dans .env.")
+    raise ValueError("ERREUR : Variables d'environnement manquantes.")
 
-# Chemin vers les fichiers JAR Hadoop et Azure
+# ---------------------------------------------------------------------------
+# Configuration de Spark + dépendances
+# ---------------------------------------------------------------------------
+
 hadoop_jars_path = os.path.expanduser("~/hadoop_jars")
-
-# Liste des JARs nécessaires
 jars = [
     f"{hadoop_jars_path}/hadoop-azure-3.3.1.jar",
     f"{hadoop_jars_path}/azure-storage-8.6.6.jar",
@@ -33,440 +34,293 @@ jars = [
     f"{hadoop_jars_path}/jetty-util-ajax-9.4.40.v20210413.jar"
 ]
 
-# Configuration Spark optimisée avec plus de mémoire
-spark = SparkSession.builder \
-    .appName("AzureParquetAnalysis") \
-    .master("local[*]") \
-    .config("spark.jars", ",".join(jars)) \
-    .config("spark.hadoop.fs.azure", "org.apache.hadoop.fs.azure.NativeAzureFileSystem") \
-    .config(f"spark.hadoop.fs.azure.account.key.{storage_account_name}.blob.core.windows.net", storage_account_key) \
-    .config("spark.hadoop.fs.azure.account.auth.type", "SharedKey") \
-    .config("spark.sql.adaptive.enabled", "true") \
-    .config("spark.driver.memory", "4g") \
-    .config("spark.executor.memory", "4g") \
-    .config("spark.driver.maxResultSize", "2g") \
-    .config("spark.driver.host", "localhost") \
+spark = (
+    SparkSession.builder
+    .appName("AzureParquetAnalysis_Simplified")
+    .master("local[*]")
+    .config("spark.jars", ",".join(jars))
+    .config("spark.hadoop.fs.azure", "org.apache.hadoop.fs.azure.NativeAzureFileSystem")
+    .config(f"spark.hadoop.fs.azure.account.key.{storage_account_name}.blob.core.windows.net", storage_account_key)
+    .config("spark.hadoop.fs.azure.account.auth.type", "SharedKey")
+    .config("spark.sql.adaptive.enabled", "true")
+    .config("spark.driver.memory", "4g")
+    .config("spark.executor.memory", "4g")
     .getOrCreate()
-
-print("✅ PySpark est bien configuré avec les fichiers JAR pour Azure !")
-
-# Ajouter les patterns regex au début du fichier, après les imports
-TRANSLATION_PATTERNS = {
-    "fr_dr": re.compile(r'\"content\":\"ترجم من الفرنساوية للدارجة:\\\\n(.*?)\".*?\"content\":\"(.*?)\"'),
-    "dr_fr": re.compile(r'\"content\":\"(?:ترجم من الدارجة للفرنساوية:|ترجم:)\\\\n?(.*?)\".*?\"content\":\"(.*?)\"'),
-    "en_dr": re.compile(r'\"content\":\"ترجم من الإنجليزية للدارجة:\\\\n(.*?)\".*?\"content\":\"(.*?)\"'),
-    "dr_en": re.compile(r'\"content\":\"(?:ترجم من الدارجة للإنجليزية:|ترجم:)\\\\n?(.*?)\".*?\"content\":\"(.*?)\"')
-}
-
-# Configuration du logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('translation_parsing.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
 )
 
-# Statistiques globales pour le logging
-parsing_stats = {
-    "total_messages": 0,
-    "matched_messages": 0,
-    "unmatched_messages": 0,
-    "matches_by_direction": defaultdict(int),
-    "unmatched_details": []  # Nouvelle structure pour les détails
-}
+print("PySpark configuré avec les JAR Azure")
 
-def load_and_filter_data():
-    """Charge et filtre les données depuis Azure Blob Storage."""
-    # URL du stockage Azure
-    azure_url = f"wasbs://{container_name}@{storage_account_name}.blob.core.windows.net/{parquet_folder}"
-    print(f"📂 Lecture des fichiers Parquet depuis : {azure_url}")
-    
-    # Lecture des données
-    df = spark.read.parquet(azure_url)
-    print("✅ Lecture réussie !")
+# ---------------------------------------------------------------------------
+# Pattern pour supprimer « ترجم …: »
+# ---------------------------------------------------------------------------
 
-    # 1. Réduire le nombre de partitions
-    df_optimise = df.coalesce(4)
+prefix_pattern = r"ترجم.*?:\s*"
 
-    # 2. Définir les directions à conserver
-    directions_a_garder = ['dr_fr', 'fr_dr', 'en_dr', 'dr_en']
+# ---------------------------------------------------------------------------
+# Fonction de nettoyage unifiée
+# ---------------------------------------------------------------------------
 
-    # 3. Optimisation du filtrage avec cache
-    df_filtre = df_optimise \
-        .select('dataset', 'id', 'messages', 'direction') \
-        .filter(col('direction').isin(directions_a_garder)) \
-        .repartition(4, 'direction') \
-        .persist()
-
-    # 4. Créer le DataFrame plat avec messages_json
-    df_plat = df_filtre \
-        .withColumn("messages_json", to_json(col("messages"))) \
-        .drop("messages") \
-        .select("dataset", "id", "messages_json", "direction") \
-        .toPandas()
-
-    print(f"📊 Nombre de lignes : {len(df_plat):,}")
-    print("\n📊 Distribution des directions :")
-    print(df_plat['direction'].value_counts())
-
-    return df_plat
-
-# Dictionnaire direction → langues
-DIRECTION_MAPPING = {
-    "en_dr": ("en", "darija"),
-    "fr_dr": ("fr", "darija"),
-    "dr_fr": ("darija", "fr"),
-    "dr_en": ("darija", "en")
-}
-
-def parse_messages(messages_str: str) -> List[Dict[str, str]]:
+def clean_text(text):
     """
-    Parse les messages JSON en une liste de dictionnaires en utilisant des regex
-    pour extraire directement les paires de traduction.
+    Nettoie TOUT texte (qu'il vienne de 'user' ou 'assistant') :
+
+    1. Supprime le préfixe « ترجم …: » où qu'il soit dans la chaîne,
+       par ex. "ترجم de la suite:Hello\\xa0world" => "Hello\\xa0world".
+    2. Remplace la séquence littérale '\\xa0' par un espace,
+       ex. "Hello\\xa0world" => "Hello world".
+    3. Remplace également le vrai caractère insécable \xa0 (U+00A0) si présent,
+       au cas où, pour le transformer en espace classique.
+
+    Renvoie la chaîne nettoyée et trimée (strip).
     """
-    try:
-        processed_messages = []
-        message_matched = False
-        parsing_stats["total_messages"] += 1
-        
-        # Pour chaque direction possible
-        for direction, pattern in TRANSLATION_PATTERNS.items():
-            # Chercher toutes les correspondances dans le texte
-            matches = pattern.finditer(messages_str)
-            matches_found = False
-            
-            for match in matches:
-                matches_found = True
-                message_matched = True
-                source_text = match.group(1).strip()
-                target_text = match.group(2).strip()
-                
-                # Nettoyer les caractères d'échappement JSON
-                source_text = source_text.replace('\\n', '\n').replace('\\\"', '"').replace('\\\\', '\\')
-                target_text = target_text.replace('\\n', '\n').replace('\\\"', '"').replace('\\\\', '\\')
-                
-                # Enlever les balises <|assistant|> si présentes
-                target_text = re.sub(r'<\|assistant\|>', '', target_text).strip()
-                
-                if source_text and target_text:
-                    parsing_stats["matches_by_direction"][direction] += 1
-                    processed_messages.extend([
-                        {"role": "user", "content": source_text, "direction": direction},
-                        {"role": "assistant", "content": target_text}
-                    ])
-                    logging.debug(f"Match trouvé pour {direction}:")
-                    logging.debug(f"Source: {source_text[:100]}...")
-                    logging.debug(f"Target: {target_text[:100]}...")
-        
-        if not message_matched:
-            parsing_stats["unmatched_messages"] += 1
-            # Stocker les détails complets du message non matché
-            try:
-                # Essayer de parser le JSON pour une meilleure analyse
-                message_data = json.loads(messages_str)
-                unmatched_detail = {
-                    "raw_message": messages_str[:1000],  # Premiers 1000 caractères
-                    "parsed_structure": message_data,
-                    "potential_issues": []
-                }
-                
-                # Analyser les problèmes potentiels
-                if "content" not in str(message_data):
-                    unmatched_detail["potential_issues"].append("Pas de champ 'content' trouvé")
-                if "ترجم" not in str(message_data):
-                    unmatched_detail["potential_issues"].append("Pas d'instruction de traduction trouvée")
-                if "\\n" not in str(message_data):
-                    unmatched_detail["potential_issues"].append("Pas de retour à la ligne trouvé")
-                
-                parsing_stats["unmatched_details"].append(unmatched_detail)
-                
-            except json.JSONDecodeError:
-                # Si le parsing JSON échoue, stocker le message brut
-                parsing_stats["unmatched_details"].append({
-                    "raw_message": messages_str[:1000],
-                    "error": "Invalid JSON format",
-                    "potential_issues": ["Format JSON invalide"]
-                })
-            
-            logging.warning(f"Aucun match trouvé pour le message: {messages_str[:100]}...")
+    # Supprime "ترجم ...:"
+    text = re.sub(prefix_pattern, "", text)
+    # Remplace la séquence littérale '\\xa0'
+    text = text.replace("\\xa0", " ")
+    # Remplace le caractère insécable \xa0
+    # Remplace le vrai caractère U+00A0
+    text = text.replace("\xa0", " ")
+    # Remplace le caractère U+2009 (thin space)
+    text = text.replace("\u2009", " ")
+    # Corrige l’échappement supplémentaire des apostrophes 
+    # "the world\\'s" => "the world's"
+    text = text.replace("\\'", "'")
+    # Remplace le backslash par un espace
+    # "il a dit \ salut" => "il a dit   salut"
+    text = text.replace("\\", " ")
+
+
+    return text.strip()
+
+# ---------------------------------------------------------------------------
+# Fonctions d'extraction de paires
+# ---------------------------------------------------------------------------
+
+def split_conversation(convo):
+    """
+    Découpe un texte multi-tours avec "<|user|>" et "<|assistant|>"
+    en une liste de paires { 'texte_cible': str, 'traduction': str }.
+
+    EXEMPLE :
+      convo = (
+         "Il a récemment perdu un match...<|assistant|>"
+         "راه خسر هاذ الايامات...<|user|>"
+         "ترجم de la suite:Rejoindre un tel réseau...\\xa0<|assistant|>"
+         "الانضمام لهاد الشبكة..."
+      )
+
+      => [
+        {
+          "texte_cible": "Il a récemment perdu un match...",
+          "traduction": "راه خسر هاذ الايامات..."
+        },
+        {
+          "texte_cible": "Rejoindre un tel réseau...",
+          "traduction": "الانضمام لهاد الشبكة..."
+        }
+      ]
+
+    ÉTAPES :
+      1) Spliter au "<|user|>" (passage de parole à l'utilisateur).
+      2) Pour chaque segment, couper au "<|assistant|>" (réponse).
+      3) Nettoyer chaque partie (suppression 'ترجم...:', '\\xa0', etc.).
+    """
+    pairs = []
+    segments = convo.split("<|user|>")
+    for segment in segments:
+        segment = segment.strip()
+        if not segment:
+            continue
+
+        if "<|assistant|>" in segment:
+            parts = segment.split("<|assistant|>")
+            user_part = parts[0].strip()
+            assistant_part = parts[1].strip() if len(parts) > 1 else ""
         else:
-            parsing_stats["matched_messages"] += 1
-        
-        return processed_messages
+            user_part, assistant_part = segment, ""
 
-    except Exception as e:
-        logging.error(f"❌ Erreur lors du parsing des messages : {str(e)}")
-        parsing_stats["unmatched_details"].append({
-            "raw_message": messages_str[:1000],
-            "error": str(e),
-            "potential_issues": ["Erreur lors du traitement"]
-        })
+        # Nettoyage unifié
+        user_part = clean_text(user_part.replace("\\n", "").replace("<|assistant|>", "").replace("<|user|>", ""))
+        assistant_part = clean_text(assistant_part.replace("\\n", "").replace("<|assistant|>", "").replace("<|user|>", ""))
+
+        pairs.append({"texte_cible": user_part, "traduction": assistant_part})
+    return pairs
+
+def extract_pairs(row_str):
+    """
+    Transforme une chaîne de type Row(content='...', role='...') 
+    en liste de paires { 'texte_cible': str, 'traduction': str }.
+
+    1. On repère chaque Row(...) par regex pour extraire content et role.
+    2. Si le premier user contient déjà des marqueurs <|assistant|> ou <|user|>,
+       => on appelle split_conversation pour découper en plusieurs tours.
+    3. Sinon, on alterne : user -> assistant -> user -> assistant...
+
+    EXEMPLES :
+      - "Row(content='Il a récemment perdu...', role='user'), Row(content='راه خسر...', role='assistant')"
+        => [{"texte_cible": "Il a récemment perdu...", "traduction": "راه خسر..."}]
+
+      - "Row(content='Il a récemment perdu...<|assistant|>راه خسر...', role='user')"
+        => => on délègue à split_conversation(...) 
+           => plusieurs paires si on a plusieurs tours dedans.
+    """
+    if not isinstance(row_str, str):
+        logging.error("L'entrée n'est pas une chaîne de caractères.")
         return []
 
-def print_parsing_stats():
+    # Repère tous les Row(...) par regex
+    pattern = r"Row\(content=(?P<quote>['\"])(?P<content>.*?)(?P=quote),\s*role=['\"](?P<role>.*?)['\"]\)"
+    matches = re.findall(pattern, row_str, re.DOTALL)
+    if not matches:
+        logging.warning("Aucun message trouvé.")
+        return []
+
+    first_role = matches[0][2]  # role du premier match
+    first_text = matches[0][1]  # content du premier match
+
+    # Si la première partie user contient <|assistant|> ou <|user|> => multi-tours
+    if first_role == "user" and ("<|assistant|>" in first_text or "<|user|>" in first_text):
+        pairs = split_conversation(first_text)
+        # Recherche d'un éventuel assistant final hors du multi-tours
+        external_assistant = ""
+        for content, role in [(m[1], m[2]) for m in matches[::-1]]:
+            if role == "assistant":
+                external_assistant = clean_text(content.strip())
+                break
+        # Compléter la dernière traduction si vide
+        if pairs and not pairs[-1]['traduction'] and external_assistant:
+            pairs[-1]['traduction'] = external_assistant
+        return pairs
+
+    # Sinon, on fait une alternance user -> assistant
+    msg_list = []
+    for _, content, role in matches:
+        # Nettoyage unifié
+        clean_content = clean_text(content.replace("\\n", ""))
+        msg_list.append({"role": role, "content": clean_content})
+
+    pairs = []
+    i = 0
+    while i < len(msg_list):
+        if msg_list[i]["role"] == "user":
+            user_text = msg_list[i]["content"]
+            assistant_text = ""
+            if i + 1 < len(msg_list) and msg_list[i+1]["role"] == "assistant":
+                assistant_text = msg_list[i+1]["content"]
+            pairs.append({"texte_cible": user_text, "traduction": assistant_text})
+            i += 2
+        else:
+            i += 1
+    return pairs
+
+def safe_extract(row):
     """
-    Affiche et enregistre les statistiques de parsing.
+    Applique extract_pairs à la colonne 'messages' d'une ligne du DataFrame
+    et complète la dernière traduction si on détecte un user sans assistant.
+
+    EXEMPLE :
+      row['messages'] = 
+        "Row(content='Il a récemment perdu...', role='user'), 
+         Row(content='راه خسر...', role='assistant')"
+      => 
+        [{"texte_cible": "Il a récemment perdu...", "traduction": "راه خسر..."}]
+
+      Si on détecte un dernier user sans traduction, on tente d'ajouter row['traduction'].
     """
-    logging.info("\n=== Statistiques de Parsing ===")
-    logging.info(f"Messages totaux traités: {parsing_stats['total_messages']}")
-    logging.info(f"Messages matchés: {parsing_stats['matched_messages']}")
-    logging.info(f"Messages non matchés: {parsing_stats['unmatched_messages']}")
-    logging.info("\nMatches par direction:")
-    for direction, count in parsing_stats["matches_by_direction"].items():
-        logging.info(f"- {direction}: {count}")
-    
-    logging.info("\nExemples de messages non matchés:")
-    for i, sample in enumerate(parsing_stats["unmatched_details"], 1):
-        logging.info(f"\n{i}. {sample['raw_message'][:100]}...")
+    pairs = extract_pairs(row['messages'])
 
-def clean_translations(df: pd.DataFrame):
+    # Compte combien de <|user|> / <|assistant|> pour détecter un user en trop
+    user_count = row['messages'].count("<|user|>") + 1
+    assistant_count = row['messages'].count("<|assistant|>")
+
+    # S'il y a un user de plus qu'assistant => on complète la dernière traduction
+    if user_count - assistant_count == 1 and pairs:
+        if not pairs[-1]['traduction']:
+            pairs[-1]['traduction'] = clean_text(row.get("traduction", ""))
+    return pairs
+
+# ---------------------------------------------------------------------------
+# Chargement des données brutes et sauvegarde en CSV
+# ---------------------------------------------------------------------------
+
+def load_raw_data():
     """
-    Nettoie et structure les traductions à partir du DataFrame.
+    1) Lit le Parquet depuis Azure
+    2) Filtre sur certaines directions (en_dr, fr_dr, dr_fr, dr_en)
+    3) Sauvegarde en CSV local
+    4) Retourne le chemin vers ce CSV
     """
-    valid_data = []
-    invalid_data = []
-    cleaned_count = 0
-    quality_issues = []
-    messages_with_multiple_pairs = 0
-    multi_turns_count = 0
+    directions = ["en_dr", "fr_dr", "dr_fr", "dr_en"]
+    azure_url = f"wasbs://{container_name}@{storage_account_name}.blob.core.windows.net/{parquet_folder}"
+    logging.info(f"Lecture des Parquet depuis: {azure_url}")
 
-    # Liste des réponses courtes acceptables
-    SHORT_ANSWERS = {
-        "fr": ["oui", "non", "ah", "oh", "nan", "si"],
-        "darija": ["أه", "لا", "أُه", "أُ", "نعم", "نع"]
-    }
+    df = spark.read.parquet(azure_url).filter(col("direction").isin(directions))
+    df_local = df.coalesce(4).toPandas()
 
-    for index, row in df.iterrows():
-        try:
-            # Utilisation de la colonne "messages_json" à la place de "messages"
-            messages = parse_messages(row["messages_json"])
-            direction = row.get("direction")
-
-            # Vérifier la validité des messages
-            if not messages or len(messages) < 2:
-                invalid_data.append({
-                    "index": index,
-                    "reason": "Invalid message format",
-                    "messages": row["messages_json"]
-                })
-                continue
-
-            # Vérifier la validité de la direction
-            if direction not in DIRECTION_MAPPING:
-                invalid_data.append({
-                    "index": index,
-                    "reason": "Unknown direction value",
-                    "direction": direction,
-                    "messages": messages
-                })
-                continue
-
-            source_lang, target_lang = DIRECTION_MAPPING[direction]
-            
-            # Traiter les paires de messages
-            conversation_pairs = []
-            for i in range(0, len(messages), 2):
-                if i + 1 >= len(messages):
-                    break
-                    
-                user_msg = messages[i]
-                assistant_msg = messages[i + 1]
-                
-                if user_msg.get("role") != "user" or assistant_msg.get("role") != "assistant":
-                    continue
-
-                original_text = user_msg["content"].strip()
-                translation_text = assistant_msg["content"].strip()
-
-                # Vérifications de qualité
-                quality_checks = []
-                
-                # 1. Vérifier la longueur minimale
-                if len(original_text) < 2 or len(translation_text) < 2:
-                    quality_checks.append("Texte trop court")
-                
-                # 2. Vérifier si la traduction est vide
-                if not translation_text or translation_text.isspace():
-                    quality_checks.append("Traduction vide")
-                
-                # 3. Vérifier si la traduction est identique à l'original
-                if original_text == translation_text:
-                    quality_checks.append("Traduction identique à l'original")
-                
-                # 4. Vérifier la longueur relative
-                if len(translation_text) < len(original_text) * 0.3:
-                    quality_checks.append("Traduction trop courte")
-                
-                # 5. Vérifier les caractères selon la direction
-                if direction == "fr_dr" or direction == "en_dr":
-                    arabic_chars = set("ابتثجحخدذرزسشصضطظعغفقكلمنهويءؤئأإآة")
-                    non_arabic = [c for c in translation_text if c not in arabic_chars and not c.isspace() and not c.isdigit() and c not in ".,،!؟:؛()[]{}"]
-                    if non_arabic:
-                        quality_checks.append(f"Caractères non-arabes : {''.join(non_arabic)}")
-                
-                # Ajouter les informations de tour
-                total_turns = len(messages) // 2
-                current_turn = (i // 2) + 1
-                quality_checks.append(f"Tour {current_turn}/{total_turns}")
-
-                # Ajouter la paire à la conversation
-                conversation_pairs.append({
-                    "source_text": original_text,
-                    "target_text": translation_text,
-                    "source_lang": source_lang,
-                    "target_lang": target_lang,
-                    "direction": direction,
-                    "quality_checks": quality_checks,
-                    "turn": current_turn,
-                    "total_turns": total_turns
-                })
-                cleaned_count += 1
-
-            # Ajouter toutes les paires de la conversation
-            valid_data.extend(conversation_pairs)
-
-            # Mettre à jour les statistiques
-            if len(messages) > 2:
-                messages_with_multiple_pairs += 1
-                multi_turns_count += (len(messages) // 2) - 1
-
-        except Exception as e:
-            print(f"❌ Erreur lors du traitement de l'index {index}: {str(e)}")
-            invalid_data.append({
-                "index": index,
-                "reason": f"Processing error: {str(e)}",
-                "messages": row["messages_json"]
-            })
-
-    print(f"\n📊 Statistiques des conversations multi-tours :")
-    print(f"- Total des traductions : {cleaned_count}")
-    print(f"- Messages avec plusieurs paires : {messages_with_multiple_pairs}")
-    print(f"- Nombre total de tours supplémentaires : {multi_turns_count}")
-    if messages_with_multiple_pairs > 0:
-        print(f"- Nombre moyen de paires par message multi-tour : {cleaned_count/messages_with_multiple_pairs:.2f}")
-
-    return valid_data, invalid_data, cleaned_count, quality_issues
-
-def save_json(data, filename: str):
-    """Sauvegarde les données dans un fichier JSON avec encodage UTF-8."""
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-def structure_translations(cleaned_file: str, output_file: str):
-    """
-    Transforme le JSON nettoyé en un format structuré explicite 
-    avec les champs 'source_lang', 'source', 'target_lang' et 'target'.
-    """
-    with open(cleaned_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    structured_translations = []
-    for item in data.get("translations", []):
-        structured_translations.append({
-            "source_lang": item.get("source_lang"),
-            "source": item.get("source_text"),
-            "target_lang": item.get("target_lang"),
-            "target": item.get("target_text"),
-            "direction": item.get("direction"),
-            "quality_checks": item.get("quality_checks", []),
-            "turn": item.get("turn", 1),
-            "total_turns": item.get("total_turns", 1)
-        })
-
-    # Afficher les statistiques sur les conversations multi-tours
-    multi_turn_conversations = sum(1 for t in structured_translations if t["total_turns"] > 1)
-    total_turns = sum(t["turn"] for t in structured_translations)
-    max_turns = max(t["total_turns"] for t in structured_translations) if structured_translations else 0
-
-    print(f"\n📊 Statistiques des conversations structurées :")
-    print(f"- Total des traductions : {len(structured_translations)}")
-    print(f"- Conversations multi-tours : {multi_turn_conversations}")
-    print(f"- Nombre total de tours : {total_turns}")
-    print(f"- Nombre maximum de tours dans une conversation : {max_turns}")
-
-    save_json({"translations": structured_translations}, output_file)
-
-def save_to_csv(df: pd.DataFrame, output_dir: str):
-    """Sauvegarde le DataFrame en format CSV."""
+    output_dir = "data_Darija-SFT-Mixture/darija_data"
     os.makedirs(output_dir, exist_ok=True)
-    csv_path = os.path.join(output_dir, "translations.csv")
-    df.to_csv(csv_path, index=False, encoding='utf-8')
-    print(f"✅ DataFrame sauvegardé en CSV dans : {csv_path}")
+    raw_file = os.path.join(output_dir, "donnees_brutes.csv")
 
-def save_unmatched_details(output_file: str):
+    df_local.to_csv(raw_file, index=False)
+    logging.info(f"Données brutes sauvegardées: {raw_file}")
+    return raw_file
+
+# ---------------------------------------------------------------------------
+# Traitement final : extraction de paires, JSON de sortie et CSV d'erreurs
+# ---------------------------------------------------------------------------
+
+def process_csv(csv_file, output_json, error_csv):
     """
-    Sauvegarde les détails des messages non matchés dans un fichier JSON.
+    1) Lit le CSV généré par load_raw_data()
+    2) Extrait les paires via safe_extract => df['pairs']
+    3) Marque les lignes sans paires => df['problem'] = True
+    4) Sauvegarde les données valides en JSON (pairs + direction) 
+       et les données problématiques en CSV.
     """
-    unmatched_data = {
-        "statistics": {
-            "total_messages": parsing_stats["total_messages"],
-            "matched_messages": parsing_stats["matched_messages"],
-            "unmatched_messages": parsing_stats["unmatched_messages"],
-            "matches_by_direction": dict(parsing_stats["matches_by_direction"])
-        },
-        "unmatched_details": parsing_stats["unmatched_details"]
-    }
-    
-    save_json(unmatched_data, output_file)
-    print(f"\n💾 Détails des messages non matchés sauvegardés dans : {output_file}")
+    try:
+        df = pd.read_csv(csv_file)
+    except Exception as e:
+        logging.exception("Erreur lecture CSV: %s", e)
+        return
+
+    df["pairs"] = df.apply(safe_extract, axis=1)
+    df["problem"] = df["pairs"].apply(lambda x: not bool(x))  # True si liste vide
+
+    df_valid = df[~df["problem"]].copy()
+    df_problem = df[df["problem"]]
+
+    df_valid["pair_count"] = df_valid["pairs"].apply(len)
+    total_pairs = df_valid["pair_count"].sum()
+    logging.info(f"Nombre total de paires extraites: {total_pairs}")
+
+    # Écrit le JSON avec paires valides
+    try:
+        df_valid[["pairs", "direction"]].to_json(
+            output_json, orient='records', force_ascii=False, indent=4
+        )
+        logging.info(f"JSON généré: {output_json}")
+    except Exception as e:
+        logging.exception("Erreur écriture JSON: %s", e)
+
+    # Écrit un CSV séparé avec les lignes problématiques
+    try:
+        df_problem.to_csv(error_csv, index=False, encoding='utf-8')
+        logging.info(f"CSV problématiques: {error_csv}")
+    except Exception as e:
+        logging.exception("Erreur écriture CSV problèmes: %s", e)
+
+# ---------------------------------------------------------------------------
+# Point d'entrée principal
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("🚀 Démarrage du traitement des données...")
-    
-    # Charger et filtrer les données depuis Azure
-    print("\n📥 Chargement des données depuis Azure...")
-    merged_df = load_and_filter_data()
-    
-    # Sauvegarder en CSV
-    csv_output_dir = "/projets/darija_app/data_Darija-SFT-Mixture/darija_data/csv_files"
-    print("\n💾 Sauvegarde du DataFrame en CSV...")
-    save_to_csv(merged_df, csv_output_dir)
-    
-    print("\n🧹 Nettoyage des données...")
-    valid_data, invalid_data, cleaned_count, quality_issues = clean_translations(merged_df)
+    print("Démarrage du traitement...")
+    csv_file = load_raw_data()
 
-    # Afficher les statistiques de parsing
-    print_parsing_stats()
+    output_dir = "data_Darija-SFT-Mixture/darija_data"
+    output_json = os.path.join(output_dir, "traductions_processed.json")
+    error_csv = os.path.join(output_dir, "lignes_problematiques.csv")
 
-    # Obtenir le chemin du dossier courant (agregation)
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Créer le dossier structured_json s'il n'existe pas
-    structured_json_dir = os.path.join(current_dir, "structured_json")
-    os.makedirs(structured_json_dir, exist_ok=True)
-
-    # Définir les chemins des fichiers de sortie dans le dossier structured_json
-    cleaned_file = os.path.join(structured_json_dir, "cleaned_translations.json")
-    invalid_file = os.path.join(structured_json_dir, "invalid_translations.json")
-    structured_file = os.path.join(structured_json_dir, "structured_translations.json")
-    quality_file = os.path.join(structured_json_dir, "quality_issues.json")
-    unmatched_file = os.path.join(structured_json_dir, "unmatched_messages.json")
-
-    print("\n💾 Sauvegarde des résultats...")
-    save_json({"translations": valid_data}, cleaned_file)
-    save_json(invalid_data, invalid_file)
-    save_json(quality_issues, quality_file)
-
-    print(f"\n✅ Nettoyage terminé ! {cleaned_count} entrées nettoyées et conservées.")
-    print(f"⚠️ {len(invalid_data)} entrées bruitées détectées et enregistrées dans {invalid_file}")
-    print(f"⚠️ {len(quality_issues)} problèmes de qualité détectés et enregistrés dans {quality_file}")
-
-    if invalid_data:
-        print("\n🔎 Exemples d'erreurs détectées :")
-        for error in invalid_data[:5]:
-            print(f"- Index {error['index']} : {error['reason']}")
-            print(f"  Messages : {error['messages']}\n")
-
-    # Structuration finale des traductions nettoyées
-    print("\n🔄 Structuration finale des données...")
-    structure_translations(cleaned_file, structured_file)
-
-    # Sauvegarder les détails des messages non matchés
-    save_unmatched_details(unmatched_file)
-
-    print("\n✨ Traitement terminé avec succès !")
-
-    # Arrêter la session Spark
+    process_csv(csv_file, output_json, error_csv)
+    print("Traitement terminé")
     spark.stop()

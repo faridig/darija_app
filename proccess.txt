@@ -1,2 +1,92 @@
-le fichier data_Darija-SFT-Mixture/darija_modules/parquet_downloader.py télécharge les parquets depuis huggingface et les envoient sur azure
-ensuite nettoyage_csv.py les récupere d'azure le nettoie et en fait un csv brut puis un csv 
+✅ Liste des tâches pour valider le Bloc 1 : "Réaliser la collecte, le stockage et la mise à disposition des données d’un projet en intelligence artificielle"
+
+📌 1. Automatiser l’extraction de données (C1)
+✅ Objectifs :
+- Automatiser l'extraction de données depuis différentes sources :
+  - Un service web via une API REST.
+  - Une page web via du web scraping.
+  - Un fichier de données (CSV, JSON, XML).
+  - Une base de données relationnelle (SQL).
+  - Un système Big Data (Hive, Spark, etc.).
+- Écriture d’un script d’extraction en Python.
+- Gestion des erreurs.
+
+📌 Livrables :
+- Code source du script d’extraction.
+- Rapport expliquant la méthodologie et les résultats obtenus.
+
+---
+
+📌 2. Développer des requêtes SQL pour l’extraction des données (C2)
+✅ Objectifs :
+- Rédiger des requêtes SQL optimisées.
+- Construire des requêtes dynamiques adaptées aux besoins du projet.
+- Documenter et tester ces requêtes.
+
+📌 Livrables :
+- Scripts SQL.
+- Documentation des requêtes SQL.
+- Rapport détaillant l’exécution et la validation des requêtes.
+
+---
+
+📌 3. Agréger et nettoyer les données collectées (C3)
+✅ Objectifs :
+- Développer un script Python pour :
+  - Supprimer les entrées corrompues.
+  - Normaliser les formats (dates, nombres, textes).
+  - Assurer la cohérence des données.
+- Mettre en place des tests automatisés.
+
+📌 Livrables :
+- Script de nettoyage et d’agrégation.
+- Exemples avant/après traitement des données.
+- Documentation du script et du processus de nettoyage.
+- Rapport détaillant les règles appliquées.
+
+---
+
+📌 4. Créer une base de données conforme au RGPD (C4)
+✅ Objectifs :
+- Concevoir un modèle de données respectant les bonnes pratiques.
+- Mettre en place une base de données relationnelle.
+- Définir et documenter les règles de confidentialité RGPD.
+- Automatiser l’importation des données.
+
+📌 Livrables :
+- Diagramme de conception de la base.
+- Script SQL pour créer et peupler la base.
+- Rapport sur la conformité RGPD.
+- Script d’importation des données en base.
+
+---
+
+📌 5. Développer une API REST pour mettre à disposition les données (C5)
+✅ Objectifs :
+- Développer une API REST pour exposer les données stockées.
+- Implémenter un système d’authentification.
+- Rédiger la documentation de l’API.
+- Tester et valider les endpoints.
+
+📌 Livrables :
+- Code source de l’API.
+- Documentation OpenAPI/Swagger.
+- Rapport expliquant le fonctionnement de l’API.
+- Tests unitaires et fonctionnels.
+
+---
+
+🚀 Plan d’action pour valider le Bloc 1 :
+🔹 Phase 1 : Planification et organisation
+- Définir les sources de données et les technologies à utiliser.
+- Créer une roadmap pour chaque compétence (C1-C5).
+
+🔹 Phase 2 : Développement et tests
+- Écrire et tester chaque script.
+- Versionner le code avec Git/GitHub.
+
+🔹 Phase 3 : Documentation et validation
+- Rédiger les rapports détaillés.
+- Compiler les livrables et préparer la soutenance.
+
+🎯 Une fois toutes ces tâches réalisées et bien documentées, tu seras prêt(e) pour valider le Bloc 1 lors de l’épreuve E1 ! Bonne chance 🚀💡
