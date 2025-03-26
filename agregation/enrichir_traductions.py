@@ -1,120 +1,244 @@
-import json
 import os
+import json
 from openai import OpenAI
 from dotenv import load_dotenv
-from typing import Dict, List
-import time
 
-# Charger les variables d'environnement
-load_dotenv()
+class RAGTranslationEnricher:
+    """
+    Cette classe lit deux fichiers JSON contenant des paires de traduction,
+    les normalise en un format unique, utilise GPT-4 pour générer des tags et un contexte,
+    puis enregistre le résultat. Pour des tests, on ne traite ici que 5 paires par fichier.
+    """
 
-class EnrichisseurTraductions:
     def __init__(self):
-        """Initialise le client OpenAI et charge la clé API depuis les variables d'environnement."""
-        self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        if not os.getenv('OPENAI_API_KEY'):
-            raise ValueError("La clé API OpenAI n'est pas définie dans le fichier .env")
-
-    def enrichir_traduction(self, traduction: Dict) -> Dict:
         """
-        Enrichit une traduction avec le domaine et le contexte en utilisant GPT.
-        
-        Args:
-            traduction: Dictionnaire contenant la traduction à enrichir
-            
-        Returns:
-            Dictionnaire enrichi avec le domaine et le contexte
+        Initialise la clé d'API OpenAI depuis les variables d'environnement.
+        Vérifie que la clé existe, sinon lève une erreur.
         """
-        prompt = f"""En tant qu'expert en darija (arabe marocain) et en culture marocaine, analysez cette traduction de manière concise :
+        load_dotenv()
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            raise ValueError(
+                "La clé API OpenAI n'est pas définie dans les variables d'environnement (.env). "
+                "Assurez-vous d'avoir OPENAI_API_KEY=... dans votre fichier .env ou vos variables d'environnement."
+            )
+        self.client = OpenAI(api_key=api_key)
 
-Source ({traduction['source_lang']}): {traduction['source']}
-Traduction (darija): {traduction['target']}
+    def load_traductions_processed(self, filepath: str) -> list:
+        """
+        Lit 'traductions_processed.json' (format direction + pairs).
 
-Fournissez les informations suivantes au format JSON :
-1. domain: un seul mot pour le domaine principal (ex: cuisine, culture, transport, santé)
-2. context: une seule phrase courte et précise décrivant la situation d'usage typique
+        Exemple de structure d'entrée :
+        [
+          {
+            "direction": "fr_dr",
+            "pairs": [
+              {
+                "texte_cible": "Que penses-tu des pommes de terre?",
+                "traduction": "أشنو راإياك ف لبطاطا?"
+              }
+            ]
+          },
+          ...
+        ]
 
-Répondez uniquement en JSON avec cette structure exacte :
-{{
-    "domain": "string (un seul mot)",
-    "context": "string (une seule phrase courte)"
-}}"""
+        Retourne une liste de dictionnaires normalisés :
+        [
+          {
+            "source_lang": "fr",
+            "target_lang": "dr",
+            "source_text": "Que penses-tu des pommes de terre?",
+            "target_text": "أشنو راإياك ف لبطاطا?"
+          },
+          ...
+        ]
+        """
+        if not os.path.isfile(filepath):
+            print(f"Fichier introuvable: {filepath}")
+            return []
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            original_data = json.load(f)
+
+        results = []
+        for entry in original_data:
+            direction = entry.get("direction", "")
+            pairs = entry.get("pairs", [])
+
+            if "_" in direction:
+                source_lang, target_lang = direction.split("_", 1)
+            else:
+                source_lang, target_lang = "unknown", "unknown"
+
+            for p in pairs:
+                source_text = p.get("texte_cible", "")
+                target_text = p.get("traduction", "")
+                # On ajoute seulement s'il y a du contenu
+                if source_text or target_text:
+                    results.append({
+                        "source_lang": source_lang,
+                        "target_lang": target_lang,
+                        "source_text": source_text,
+                        "target_text": target_text
+                    })
+        return results
+
+    def load_translations_scrapping(self, filepath: str) -> list:
+        """
+        Lit 'translations.json' (champ "translations") au format :
+        {
+          "translations": [
+            {
+              "source_lang": "fr",
+              "source": "Tu connais un bon restaurant marocain dans le coin ?",
+              "target_lang": "darija",
+              "target": "تعرف شي مطعم..."
+            },
+            ...
+          ]
+        }
+
+        Retourne une liste de dictionnaires normalisés :
+        [
+          {
+            "source_lang": "fr",
+            "target_lang": "dr",
+            "source_text": "Tu connais un bon restaurant marocain dans le coin ?",
+            "target_text": "تعرف شي مطعم..."
+          },
+          ...
+        ]
+        """
+        if not os.path.isfile(filepath):
+            print(f"Fichier introuvable: {filepath}")
+            return []
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        translations_data = data.get("translations", [])
+        results = []
+        for t in translations_data:
+            source_lang = t.get("source_lang", "")
+            target_lang = t.get("target_lang", "")
+            # Uniformisation : remplacer "darija" par "dr"
+            if target_lang.lower() == "darija":
+                target_lang = "dr"
+            source_text = t.get("source", "")
+            target_text = t.get("target", "")
+
+            if source_text or target_text:
+                results.append({
+                    "source_lang": source_lang,
+                    "target_lang": target_lang,
+                    "source_text": source_text,
+                    "target_text": target_text
+                })
+        return results
+
+    def generate_tags_and_context_gpt4(self, source_text: str, target_text: str) -> dict:
+        """
+        Utilise GPT-4 (ChatCompletion) pour produire un dictionnaire
+        {
+          "tags": [...],
+          "context": "..."
+        }
+        basé sur une analyse du texte source et du texte cible.
+        """
+
+        system_message = {
+            "role": "system",
+            "content": (
+                "Tu es un assistant IA hautement qualifié, spécialisé dans la classification de texte et l'analyse sémantique. "
+                "Tu reçois un texte source et un texte cible (une traduction). "
+                "Tu dois déterminer entre 2 et 5 'tags' décrivant le contenu (domaine, style, sentiment, intention, etc.), "
+                "mais tu ne dois pas utiliser de tags liés directement aux langues, comme 'dr', 'fr', 'eng', 'arabic', 'french', 'english'. "
+                "Ensuite, tu produis un 'context' concis en français (1 à 2 phrases) expliquant la situation dans laquelle on utiliserait ces phrases.\n\n"
+                "Important : \n"
+                "- Ne mentionne pas les langues dans les tags (pas de 'dr', 'fr', 'eng', 'arabic', 'french', 'english'). \n"
+                "- Retourne un objet JSON valide qui contient uniquement les clés 'tags' et 'context'. \n"
+                "Ne rajoute pas d'autres commentaires ou champs."
+            )
+        }
+        user_message = {
+            "role": "user",
+            "content": f'source_text: "{source_text}"\ntarget_text: "{target_text}"'
+        }
 
         try:
             response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "Vous êtes un expert en darija et en culture marocaine."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=500
+                messages=[system_message, user_message],
+                max_tokens=200,
+                temperature=0.0
             )
-            
-            # Extraire et parser la réponse JSON
-            metadata = json.loads(response.choices[0].message.content)
-            
-            # Ajouter les métadonnées à la traduction
-            traduction_enrichie = traduction.copy()
-            traduction_enrichie["domain"] = metadata["domain"]
-            traduction_enrichie["context"] = metadata["context"]
-            
-            return traduction_enrichie
-            
+            raw_output = response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"Erreur lors de l'enrichissement : {str(e)}")
-            return traduction
+            print(f"Erreur lors de l'appel à l'API GPT-4: {e}")
+            return {"tags": [], "context": ""}
 
-    def traiter_fichier(self, chemin_entree: str, chemin_sortie: str):
-        """
-        Traite un fichier JSON contenant des traductions et sauvegarde les résultats enrichis.
-        
-        Args:
-            chemin_entree: Chemin vers le fichier JSON source
-            chemin_sortie: Chemin où sauvegarder le fichier JSON enrichi
-        """
         try:
-            # Charger les traductions
-            with open(chemin_entree, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            # Enrichir chaque traduction
-            traductions_enrichies = []
-            total = len(data["translations"])
-            
-            for i, traduction in enumerate(data["translations"], 1):
-                print(f"\n🔄 Traitement de la traduction {i}/{total}")
-                print(f"Source: {traduction['source']}")
-                
-                # Enrichir la traduction
-                traduction_enrichie = self.enrichir_traduction(traduction)
-                
-                # Afficher le domaine et le contexte
-                print(f"\n📌 Domaine: {traduction_enrichie.get('domain', 'Non disponible')}")
-                print(f"💡 Contexte: {traduction_enrichie.get('context', 'Non disponible')}")
-                print("=" * 50)  # Ligne de séparation
-                
-                traductions_enrichies.append(traduction_enrichie)
-                
-                # Attendre un peu pour respecter les limites de l'API
-                time.sleep(1)
-                
-            # Sauvegarder les résultats
-            resultat = {"translations": traductions_enrichies}
-            with open(chemin_sortie, 'w', encoding='utf-8') as f:
-                json.dump(resultat, f, ensure_ascii=False, indent=2)
-                
-            print(f"\n✅ Traitement terminé ! Résultats sauvegardés dans {chemin_sortie}")
-            
-        except Exception as e:
-            print(f"❌ Erreur lors du traitement du fichier : {str(e)}")
+            result_json = json.loads(raw_output)
+            return result_json
+        except json.JSONDecodeError:
+            print("Impossible de parser la sortie JSON du LLM. Sortie brute :")
+            print(raw_output)
+            return {"tags": [], "context": ""}
+
+    def run(self):
+        """
+        1) Charge 5 paires depuis 'traductions_processed.json'
+           et 5 paires depuis 'translations.json'.
+        2) Concatène ces 10 paires.
+        3) Pour chacune, appelle GPT-4 pour générer des tags et un contexte.
+        4) Enregistre le résultat final dans 'final_translations_with_tags.json'.
+        """
+
+        processed_file = "../data_Darija-SFT-Mixture/darija_data/traductions_processed.json"
+        scrapping_file = "../traductordarija_scrapping/translations.json"
+
+        # Lecture et normalisation
+        list_from_processed = self.load_traductions_processed(processed_file)
+        list_from_scrapping = self.load_translations_scrapping(scrapping_file)
+
+        # Tronquer à 5 paires max de chaque
+        list_from_processed = list_from_processed[:5]
+        list_from_scrapping = list_from_scrapping[:5]
+
+        # Concaténer => 10 paires
+        all_pairs = list_from_processed + list_from_scrapping
+        print(f"Total de paires à analyser: {len(all_pairs)}")
+
+        final_results = []
+        for i, pair in enumerate(all_pairs, start=1):
+            source_text = pair.get("source_text", "")
+            target_text = pair.get("target_text", "")
+            source_lang = pair.get("source_lang", "")
+            target_lang = pair.get("target_lang", "")
+
+            gen_result = self.generate_tags_and_context_gpt4(source_text, target_text)
+
+            entry = {
+                "id": f"pair_{i}",
+                "source_lang": source_lang,
+                "target_lang": target_lang,
+                "source_text": source_text,
+                "target_text": target_text,
+                "tags": gen_result.get("tags", []),
+                "context": gen_result.get("context", "")
+            }
+            final_results.append(entry)
+
+        output_file = "final_translations_with_tags.json"
+        with open(output_file, "w", encoding="utf-8") as out:
+            json.dump(final_results, out, ensure_ascii=False, indent=2)
+
+        print(f"Fichier de sortie créé: {output_file}")
+        if final_results:
+            print("Exemple de la première entrée enrichie :")
+            # IMPORTANT: on ferme bien la parenthèse ici
+            print(json.dumps(final_results[0], ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
-    # Chemins des fichiers
-    dossier_script = os.path.dirname(os.path.abspath(__file__))
-    chemin_entree = os.path.join(dossier_script, "structured_translations.json")
-    chemin_sortie = os.path.join(dossier_script, "translations_enrichies.json")
-    
-    # Créer et exécuter l'enrichisseur
-    enrichisseur = EnrichisseurTraductions()
-    enrichisseur.traiter_fichier(chemin_entree, chemin_sortie)
+    enricher = RAGTranslationEnricher()
+    enricher.run()
