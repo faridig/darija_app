@@ -1,0 +1,62 @@
+Pour vous donner une intuition, imaginez ces deux scénarios :
+
+---
+
+### 1. Traduction par LLM seul
+
+**Exemple :**  
+Supposons que vous ayez la phrase suivante en français :  
+**"Que penses-tu des pommes de terre ?"**  
+Un LLM comme GPT-4, sans aucune information externe, va traduire directement cette phrase en darija. Il peut très bien produire quelque chose comme :  
+**"أشنو رآيك فالبطاطا؟"**  
+Cette traduction est correcte, mais elle est réalisée uniquement à partir de sa formation générale. Le modèle va choisir la traduction en se basant sur ce qu'il a appris, sans connaître le contexte d'utilisation particulier (par exemple, s'agit-il d'une discussion amicale, d'un débat culinaire, etc.).
+
+---
+
+### 2. Traduction avec RAG
+
+**Processus RAG :**  
+1. **Recherche d'exemples pertinents :**  
+   - Le système va d'abord chercher dans sa base de données (votre collection de paires enrichies) des exemples similaires à la phrase d'entrée.  
+   - Par exemple, il peut trouver une paire où le contexte précise qu'il s'agit d'une discussion informelle entre amis sur la nourriture.
+
+2. **Fourniture de contexte :**  
+   - La paire récupérée contient des métadonnées : des tags comme "gastronomie", "informel", "question" et un contexte qui explique que cette phrase est utilisée dans une conversation amicale.
+   - Ce contexte enrichi aide le LLM à comprendre l'intention derrière la phrase.
+
+3. **Génération de la traduction en se basant sur l'exemple :**  
+   - Grâce à cette information, le LLM peut adapter son style et produire une traduction qui correspond exactement à l'usage souhaité.  
+   - Par exemple, il peut choisir une formulation qui est plus familière, en se référant au contexte de discussion amicale.
+
+**Intuition concrète :**  
+- **Sans RAG :** Le modèle traduit « Que penses-tu des pommes de terre ?» en se basant sur son apprentissage général.  
+- **Avec RAG :** Le modèle reçoit en plus le contexte : « Cette phrase est utilisée dans une discussion amicale sur la nourriture, dans un cadre informel. »  
+  - Ainsi, il peut décider de traduire de manière à refléter ce ton informel, par exemple en utilisant des expressions ou un style plus familier qui correspondent à l'exemple récupéré.
+
+---
+
+### Autre exemple
+
+**Phrase ambiguë :**  
+**"Je ne peux pas manger"**  
+- **Sans contexte externe**, un LLM va produire simplement : **"مانقدرش ناكل"**.  
+- **Avec RAG**, si le système récupère une paire où le contexte indique qu’il s’agit d’une expression liée à une réaction à une situation particulière (par exemple, un manque d'appétit dû à une situation stressante ou une condition médicale), le LLM pourra intégrer cette nuance.  
+  - Par exemple, le contexte pourrait indiquer que c'est une réaction à un événement surprenant, et la traduction pourrait alors être nuancée (même si la phrase reste assez simple).
+
+---
+
+### Pourquoi c'est utile ?
+
+- **Amélioration de la précision contextuelle :**  
+  Le RAG permet de ne pas se contenter d'une traduction générique, mais de la contextualiser selon le domaine, le ton et l'intention.
+  
+- **Adaptation du style :**  
+  Les tags et le contexte renseignés aident le LLM à choisir le registre adéquat. Par exemple, une phrase dans un cadre formel sera traduite différemment qu'une phrase utilisée dans une conversation informelle.
+
+- **Réduction des erreurs d'interprétation :**  
+  En fournissant des exemples similaires, vous offrez au modèle une "mémoire" externe qui l'aide à éviter des ambiguïtés ou des erreurs de traduction qui pourraient survenir lorsqu'il se base uniquement sur son entraînement général.
+
+---
+
+**En résumé :**  
+Le LLM peut très bien traduire sans RAG, mais en ajoutant un composant de récupération, vous enrichissez l'information contextuelle, ce qui permet de générer des traductions plus précises et adaptées aux besoins spécifiques de votre application. Cela améliore la cohérence et la qualité globale des traductions fournies aux utilisateurs.

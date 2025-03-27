@@ -149,21 +149,28 @@ class RAGTranslationEnricher:
         system_message = {
             "role": "system",
             "content": (
-                "Tu es un assistant IA hautement qualifié, spécialisé dans la classification de texte et l'analyse sémantique. "
-                "Tu reçois un texte source et un texte cible (une traduction). "
-                "Tu dois déterminer entre 2 et 5 'tags' décrivant le contenu (domaine, style, sentiment, intention, etc.), "
-                "mais tu ne dois pas utiliser de tags liés directement aux langues, comme 'dr', 'fr', 'eng', 'arabic', 'french', 'english'. "
-                "Ensuite, tu produis un 'context' concis en français (1 à 2 phrases) expliquant la situation dans laquelle on utiliserait ces phrases.\n\n"
+                "Tu es un assistant IA expert en classification de texte et en analyse sémantique. "
+                "Tu reçois deux textes : un texte source et sa traduction (texte cible). "
+                "Ta mission est de générer, en utilisant une taxonomie contrôlée, entre 2 et 5 'tags' pertinents qui décrivent le contenu des textes. "
+                "Ces tags doivent couvrir notamment : "
+                "- le domaine ou sujet (ex. gastronomie, finance, médical, juridique, technologie, etc.), "
+                "- le registre ou style (informel, formel, technique, littéraire, humoristique, etc.), "
+                "- l'intention ou la fonction (question, affirmation, demande, excuse, conseil, etc.). "
+                "Il est impératif de ne pas utiliser de tags relatifs aux langues (pas de 'dr', 'fr', 'eng', 'arabic', 'french', 'english'), "
+                "car ces informations sont déjà disponibles ailleurs. \n\n"
+                "Ensuite, tu dois produire un 'context' concis en français (1 à 2 phrases) qui décrit la situation d'usage de ces phrases, "
+                "en te concentrant sur l'objectif ou l'intention sous-jacente, sans répéter les informations de langue. \n\n"
                 "Important : \n"
-                "- Ne mentionne pas les langues dans les tags (pas de 'dr', 'fr', 'eng', 'arabic', 'french', 'english'). \n"
-                "- Retourne un objet JSON valide qui contient uniquement les clés 'tags' et 'context'. \n"
-                "Ne rajoute pas d'autres commentaires ou champs."
+                "- Les tags doivent être choisis parmi des catégories prédéfinies (domaine, style, intention) et ne doivent pas inclure d'indications de langue. \n"
+                "- Retourne un objet JSON valide contenant uniquement les clés 'tags' et 'context'. \n"
+                "- Ne rajoute pas d'autres commentaires, explications ou champs supplémentaires."
             )
         }
         user_message = {
             "role": "user",
-            "content": f'source_text: "{source_text}"\ntarget_text: "{target_text}"'
+            "content": f'Texte source: "{source_text}"\nTexte cible: "{target_text}"'
         }
+
 
         try:
             response = self.client.chat.completions.create(
