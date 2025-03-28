@@ -17,7 +17,7 @@ class GenerateurQuestions:
             raise ValueError("La clé API OpenAI n'est pas définie dans le fichier .env")
         self.client = OpenAI(api_key=api_key)
 
-    def generer_questions(self, langue: str, nombre_questions: int = 300) -> list:
+    def generer_questions(self, langue: str, nombre_questions: int = 1000) -> list:
         """
         Génère des questions ou affirmations touristiques dans la langue spécifiée.
         
