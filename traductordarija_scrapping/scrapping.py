@@ -396,6 +396,24 @@ def traduire_texte_dans_page(page, phrase, max_retries=3, source_lang="fr"):
     return None
 
 
+def charger_traductions_existantes(fichier_json):
+    """
+    Charge les traductions existantes depuis le fichier JSON.
+    
+    Args:
+        fichier_json (str): Chemin vers le fichier JSON des traductions
+    
+    Returns:
+        set: Ensemble des phrases déjà traduites
+    """
+    try:
+        with open(fichier_json, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return {(t["source"], t["source_lang"]) for t in data.get("translations", [])}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
 def traduire_phrases_excel(chemin_fichier_excel, source_lang="fr"):
     """
     Traduit toutes les phrases d'un fichier Excel.
@@ -421,6 +439,10 @@ def traduire_phrases_excel(chemin_fichier_excel, source_lang="fr"):
         dossier_script = os.path.dirname(os.path.abspath(__file__))
         fichier_json = os.path.join(dossier_script, "translations.json")
 
+        # Charger les traductions existantes
+        traductions_existantes = charger_traductions_existantes(fichier_json)
+        print(f"📚 Nombre de traductions déjà effectuées : {len(traductions_existantes)}")
+
         with sync_playwright() as p:
             print("Lancement du navigateur Chromium...")
             browser = p.chromium.launch(
@@ -430,16 +452,26 @@ def traduire_phrases_excel(chemin_fichier_excel, source_lang="fr"):
             page = browser.new_page(viewport={"width": 1920, "height": 1080})
             if not configurer_page_traduction(page, source_lang=source_lang):
                 raise Exception("Échec de la configuration de la page")
+            
             for index, row in df.iterrows():
                 phrase = str(row[nom_colonne]).strip()
                 if not phrase:
                     continue
+                
+                # Vérifier si la phrase a déjà été traduite
+                if (phrase, source_lang) in traductions_existantes:
+                    print(f"\n⏭️ Phrase déjà traduite ({index + 1}/{total_phrases})")
+                    print(f"📝 Phrase source ({source_lang}): {phrase}")
+                    continue
+                
                 print(f"\n🔄 Traduction {index + 1}/{total_phrases}")
                 print(f"📝 Phrase source ({source_lang}): {phrase}")
                 traduction = traduire_texte_dans_page(page, phrase)
                 if traduction:
                     print(f"✅ Traduction : {traduction}")
                     sauvegarder_traduction_json(phrase, traduction, source_lang, fichier_json)
+                    # Mettre à jour l'ensemble des traductions existantes
+                    traductions_existantes.add((phrase, source_lang))
                 else:
                     print(f"❌ Échec de la traduction pour : {phrase}")
                 time.sleep(5)
@@ -454,8 +486,8 @@ if __name__ == "__main__":
     print(f"📂 Répertoire de travail : {os.getcwd()}")
 
     # Définition des chemins des fichiers Excel
-    fichier_excel_fr = "data_xlsx/questions_fr_affirmations_maroc.xlsx"
-    fichier_excel_en = "data_xlsx/questions_tourist_morocco_english.xlsx"
+    fichier_excel_fr = "../agregation/data_xlsx/questions_fr.xlsx"
+    fichier_excel_en = "../agregation/data_xlsx/questions_en.xlsx"
 
     # Créer un fichier JSON unique pour toutes les traductions
     dossier_script = os.path.dirname(os.path.abspath(__file__))
