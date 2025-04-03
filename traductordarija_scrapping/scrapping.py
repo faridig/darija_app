@@ -426,8 +426,8 @@ def traduire_phrases_excel(chemin_fichier_excel, source_lang="fr"):
         print(f"Lecture du fichier Excel : {chemin_fichier_excel}")
         df = pd.read_excel(chemin_fichier_excel)
         
-        # Déterminer le nom de la colonne en fonction de la langue source
-        nom_colonne = 'Questions ou Affirmations' if source_lang == 'fr' else 'Questions or Statements'
+        # Utiliser le même nom de colonne pour les deux langues
+        nom_colonne = 'Questions ou Affirmations'
         
         if nom_colonne not in df.columns:
             raise ValueError(f"❌ La colonne '{nom_colonne}' n'existe pas dans le fichier Excel")
@@ -466,7 +466,7 @@ def traduire_phrases_excel(chemin_fichier_excel, source_lang="fr"):
                 
                 print(f"\n🔄 Traduction {index + 1}/{total_phrases}")
                 print(f"📝 Phrase source ({source_lang}): {phrase}")
-                traduction = traduire_texte_dans_page(page, phrase)
+                traduction = traduire_texte_dans_page(page, phrase, source_lang=source_lang)
                 if traduction:
                     print(f"✅ Traduction : {traduction}")
                     sauvegarder_traduction_json(phrase, traduction, source_lang, fichier_json)
@@ -499,11 +499,17 @@ if __name__ == "__main__":
     # 1. Traitement du fichier français
     print("\n🇫🇷 Traitement du fichier français...")
     print(f"📄 Fichier : {fichier_excel_fr}")
-    traduire_phrases_excel(fichier_excel_fr, source_lang="fr")
+    if os.path.exists(fichier_excel_fr):
+        traduire_phrases_excel(fichier_excel_fr, source_lang="fr")
+    else:
+        print(f"❌ Fichier non trouvé : {fichier_excel_fr}")
 
     # 2. Traitement du fichier anglais
     print("\n🇬🇧 Traitement du fichier anglais...")
     print(f"📄 Fichier : {fichier_excel_en}")
-    traduire_phrases_excel(fichier_excel_en, source_lang="en")
+    if os.path.exists(fichier_excel_en):
+        traduire_phrases_excel(fichier_excel_en, source_lang="en")
+    else:
+        print(f"❌ Fichier non trouvé : {fichier_excel_en}")
 
     print("\n✅ Script terminé - Les deux fichiers ont été traités !")
