@@ -1,6 +1,7 @@
 # Environnement virtuel
 venv/
 .env
+source/data_Darija-SFT-Mixture/huggingface_token.env
 
 # Fichiers Python
 __pycache__/
@@ -25,10 +26,19 @@ wheels/
 *.egg
 
 # Fichiers de données
-*.json
-*.xlsx
-*.csv
-*.parquet
+# Exclure les fichiers de données volumineux ou temporaires
+source/agregation/data_synthetique/*.json
+source/agregation/data_synthetique/*.xlsx
+source/agregation/data_synthetique/*.csv
+source/agregation/data_synthetique/*.parquet
+source/agregation/translations_with_tags.json
+source/agregation/notebook/*.csv
+source/agregation/notebook/*.parquet
+
+# Inclure les fichiers de données importants
+!source/agregation/data_synthetique/questions_fr.xlsx
+!source/agregation/data_synthetique/questions_en.xlsx
+!source/agregation/structured_json/*.json
 
 # Fichiers système
 .DS_Store
