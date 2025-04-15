@@ -1,13 +1,16 @@
+'''enrichir les traductions des deux fichiers "../data_Darija-SFT-Mixture/darija_data/traductions_processed.json" et "../traductordarija_scrapping/translations.json" avec des tags et un contexte'''
+
 import os
 import json
 from openai import OpenAI
 from dotenv import load_dotenv
+from tqdm import tqdm  # Pour la barre de progression
 
 class RAGTranslationEnricher:
     """
     Cette classe lit deux fichiers JSON contenant des paires de traduction,
     les normalise en un format unique, utilise GPT-4 pour générer des tags et un contexte,
-    puis enregistre le résultat. Pour des tests, on ne traite ici que 5 paires par fichier.
+    puis enregistre le résultat.
     """
 
     def __init__(self):
@@ -192,59 +195,133 @@ class RAGTranslationEnricher:
             print(raw_output)
             return {"tags": [], "context": ""}
 
+    def find_last_processed_pair(self, results: list) -> int:
+        """
+        Trouve l'index de la dernière paire traitée en analysant les IDs dans les résultats.
+        Retourne -1 si aucun résultat n'existe.
+        """
+        if not results:
+            return -1
+            
+        # Trouver le plus grand ID numérique dans les résultats
+        max_id = -1
+        for entry in results:
+            try:
+                # Extraire le numéro de l'ID (pair_123 ou pair_inverse_123)
+                id_num = int(entry['id'].split('_')[-1])
+                max_id = max(max_id, id_num)
+            except (KeyError, ValueError, IndexError):
+                continue
+                
+        return max_id
+
     def run(self):
         """
-        1) Charge 5 paires depuis 'traductions_processed.json'
-           et 5 paires depuis 'translations.json'.
-        2) Concatène ces 10 paires.
-        3) Pour chacune, appelle GPT-4 pour générer des tags et un contexte.
-        4) Enregistre le résultat final dans 'final_translations_with_tags.json'.
+        1) Charge toutes les paires et le fichier existant
+        2) Détecte automatiquement le point de reprise
+        3) Continue le traitement à partir de ce point
+        4) Enregistre le résultat final dans 'translations_with_tags.json'
         """
-
         processed_file = "../data_Darija-SFT-Mixture/darija_data/traductions_processed.json"
         scrapping_file = "../traductordarija_scrapping/translations.json"
+        output_file = "translations_with_tags.json"
 
-        # Lecture et normalisation
+        print("Chargement des données...")
+        # Charger les fichiers sources
         list_from_processed = self.load_traductions_processed(processed_file)
         list_from_scrapping = self.load_translations_scrapping(scrapping_file)
-
-        # Tronquer à 5 paires max de chaque
-        list_from_processed = list_from_processed[:5]
-        list_from_scrapping = list_from_scrapping[:5]
-
-        # Concaténer => 10 paires
         all_pairs = list_from_processed + list_from_scrapping
-        print(f"Total de paires à analyser: {len(all_pairs)}")
 
-        final_results = []
-        for i, pair in enumerate(all_pairs, start=1):
-            source_text = pair.get("source_text", "")
-            target_text = pair.get("target_text", "")
-            source_lang = pair.get("source_lang", "")
-            target_lang = pair.get("target_lang", "")
+        # Charger les résultats existants
+        results = []
+        if os.path.exists(output_file):
+            try:
+                with open(output_file, "r", encoding="utf-8") as f:
+                    results = json.load(f)
+                print(f"Fichier de résultats existant chargé avec {len(results)} entrées")
+            except Exception as e:
+                print(f"Erreur lors du chargement du fichier de résultats : {e}")
+                print("Démarrage d'un nouveau traitement")
+                results = []
 
-            gen_result = self.generate_tags_and_context_gpt4(source_text, target_text)
+        # Trouver le point de reprise
+        last_pair_index = self.find_last_processed_pair(results)
+        if last_pair_index == -1:
+            print("Aucun résultat existant trouvé, démarrage depuis le début")
+            last_pair_index = 0
+        else:
+            print(f"Reprise du traitement à partir de la paire {last_pair_index + 1}")
 
-            entry = {
-                "id": f"pair_{i}",
-                "source_lang": source_lang,
-                "target_lang": target_lang,
-                "source_text": source_text,
-                "target_text": target_text,
-                "tags": gen_result.get("tags", []),
-                "context": gen_result.get("context", "")
-            }
-            final_results.append(entry)
+        print(f"Nombre de paires déjà traitées : {len(results)}")
+        print(f"Total de paires à traiter : {len(all_pairs)}")
 
-        output_file = "final_translations_with_tags.json"
-        with open(output_file, "w", encoding="utf-8") as out:
-            json.dump(final_results, out, ensure_ascii=False, indent=2)
+        # Continuer le traitement à partir de la dernière paire
+        for i, pair in enumerate(tqdm(all_pairs[last_pair_index:], desc="Enrichissement des paires"), start=last_pair_index + 1):
+            try:
+                source_text = pair.get("source_text", "")
+                target_text = pair.get("target_text", "")
+                source_lang = pair.get("source_lang", "")
+                target_lang = pair.get("target_lang", "")
 
-        print(f"Fichier de sortie créé: {output_file}")
-        if final_results:
-            print("Exemple de la première entrée enrichie :")
-            # IMPORTANT: on ferme bien la parenthèse ici
-            print(json.dumps(final_results[0], ensure_ascii=False, indent=2))
+                # Vérifier si la paire est valide
+                if not source_text or not target_text:
+                    print(f"\nPaire {i} ignorée : texte source ou cible vide")
+                    continue
+
+                # Générer les tags et le contexte une seule fois par paire
+                gen_result = self.generate_tags_and_context_gpt4(source_text, target_text)
+
+                # Paire originale
+                original_entry = {
+                    "id": f"pair_{i}",
+                    "source_lang": source_lang,
+                    "target_lang": target_lang,
+                    "source_text": source_text,
+                    "target_text": target_text,
+                    "tags": gen_result.get("tags", []),
+                    "context": gen_result.get("context", "")
+                }
+                results.append(original_entry)
+
+                # Paire inversée avec les mêmes tags et contexte
+                inverse_entry = {
+                    "id": f"pair_inverse_{i}",
+                    "source_lang": target_lang,
+                    "target_lang": source_lang,
+                    "source_text": target_text,
+                    "target_text": source_text,
+                    "tags": gen_result.get("tags", []),  # Mêmes tags
+                    "context": gen_result.get("context", "")  # Même contexte
+                }
+                results.append(inverse_entry)
+
+                # Sauvegarde intermédiaire toutes les 50 paires
+                if i % 50 == 0:
+                    try:
+                        with open(output_file, "w", encoding="utf-8") as out:
+                            json.dump(results, out, ensure_ascii=False, indent=2)
+                        print(f"\nSauvegarde intermédiaire effectuée après la paire {i}")
+                    except Exception as e:
+                        print(f"\nErreur lors de la sauvegarde intermédiaire : {e}")
+
+            except Exception as e:
+                print(f"\nErreur lors du traitement de la paire {i} : {e}")
+                continue
+
+        # Sauvegarde finale
+        try:
+            with open(output_file, "w", encoding="utf-8") as out:
+                json.dump(results, out, ensure_ascii=False, indent=2)
+            print(f"\nTraitement terminé ! Fichier mis à jour: {output_file}")
+            print(f"Nombre total de paires : {len(results)}")
+            
+            if results:
+                print("\nDernière paire traitée :")
+                print(f"Direction: {results[-2]['source_lang']} → {results[-2]['target_lang']}")
+                print(f"Tags: {results[-2]['tags']}")
+                print(f"Context: {results[-2]['context']}")
+        except Exception as e:
+            print(f"\nErreur lors de la sauvegarde finale : {e}")
 
 if __name__ == "__main__":
     enricher = RAGTranslationEnricher()

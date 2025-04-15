@@ -1,3 +1,3 @@
-j'ai géneré deux xsls dans agregation/data_xlsx il faut
-1. les donner au scrapping 
-2. puis les enrichir par le .py pour le context
+- Fichiers de questions générés :
+  - agregation/data_synthetique/questions_fr.xlsx
+  - agregation/data_synthetique/questions_en.xlsx 
