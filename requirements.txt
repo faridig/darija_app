@@ -1,12 +1,19 @@
-openai>=1.0.0
-python-dotenv>=1.0.0
-tqdm>=4.65.0
-pandas>=2.0.0
-numpy>=1.24.0
-fastapi>=0.100.0
-uvicorn>=0.22.0
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-python-multipart>=0.0.6 
+# Base de données
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.25
+python-dotenv==1.0.0
+
+# Traitement des données
+pandas==2.2.0
+openpyxl==3.1.2
+tqdm==4.66.1
+
+# API et Traduction
+openai==1.12.0
+requests==2.31.0
+fastapi==0.109.2
+uvicorn==0.27.1
+
+# Utilitaires
+python-jose==3.3.0  # Pour JWT
+passlib==1.7.4      # Pour le hachage des mots de passe 

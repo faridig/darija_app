@@ -14,14 +14,17 @@ darija_app/
 ├── suivi_projet.md         # Suivi du projet
 ├── suivi.txt              # Suivi des tâches
 ├── .env                   # Variables d'environnement
+├── setup.sh               # Script d'installation
 └── source/               # Code source
     ├── agregation/      # Scripts d'agrégation et enrichissement
     │   ├── data_synthetique/  # Données synthétiques générées
     │   ├── notebook/          # Notebooks d'analyse
     │   ├── sql/              # Scripts SQL
     │   ├── structured_json/   # Données JSON structurées
-    │   ├── enrichir_traductions.py
     │   └── nettoyage_csv.py
+    ├── database/        # Gestion de la base de données
+    │   ├── models.py    # Modèles SQLAlchemy
+    │   └── migration.py # Scripts de migration
     ├── data_Darija-SFT-Mixture/  # Données et modules
     │   └── darija_data/
     └── traductordarija_scrapping/ # Scripts de scraping
@@ -31,27 +34,45 @@ darija_app/
 
 1. Cloner le dépôt :
 ```bash
-git clone https://github.com/votre-username/darija_app.git
+git clone https://github.com/faridig/darija_app.git
 cd darija_app
 ```
 
-2. Créer et activer un environnement virtuel :
+2. Exécuter le script d'installation :
 ```bash
-python -m venv venv
-source venv/bin/activate  # Sur Unix/MacOS
-# ou
-venv\Scripts\activate     # Sur Windows
+chmod +x setup.sh
+./setup.sh
 ```
 
-3. Installer les dépendances :
+3. Mettre à jour la clé API OpenAI dans `.env` :
 ```bash
-pip install -r requirements.txt
+nano source/agregation/.env
 ```
 
-4. Configurer la clé API OpenAI :
-Créer un fichier `.env` à la racine du projet avec le contenu suivant :
+## Migration des Données vers PostgreSQL
+
+1. Installer PostgreSQL :
+```bash
+sudo apt-get update
+sudo apt-get install postgresql postgresql-contrib
 ```
-OPENAI_API_KEY=votre_clé_api_ici
+
+2. Créer la base de données :
+```bash
+sudo -u postgres psql
+CREATE DATABASE darija_db;
+\q
+```
+
+3. Mettre à jour les variables d'environnement dans `source/agregation/.env` :
+```bash
+nano source/agregation/.env
+```
+
+4. Exécuter la migration :
+```bash
+cd source/agregation
+python migrate_to_postgres.py
 ```
 
 ## Utilisation
@@ -68,7 +89,7 @@ python enrichir_traductions.py
 Le script va :
 - Charger les traductions depuis les fichiers JSON
 - Générer des tags et du contexte pour chaque paire
-- Sauvegarder les résultats dans `translations_with_tags.json`
+- Sauvegarder les résultats dans `data/translations_with_tags.json`
 
 ## Documentation
 
@@ -79,10 +100,13 @@ Le script va :
 
 ## Contribution
 
-1. Créer une branche pour votre fonctionnalité
-2. Commiter vos changements
-3. Créer une Pull Request
+Les contributions sont les bienvenues ! N'hésitez pas à :
+1. Forker le projet
+2. Créer une branche pour votre fonctionnalité
+3. Commiter vos changements
+4. Pousser vers la branche
+5. Ouvrir une Pull Request
 
 ## Licence
 
-MIT 
+Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails. 

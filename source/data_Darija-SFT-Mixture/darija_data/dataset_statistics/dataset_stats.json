@@ -1,0 +1,34 @@
+{
+  "dataset": {
+    "nom": "MBZUAI-Paris/Darija-SFT-Mixture",
+    "auteur": "MBZUAI-Paris",
+    "licence": "odc-by",
+    "mis_à_jour": "2024-09-27T06:32:19.000Z",
+    "popularité": {
+      "téléchargements": 231,
+      "likes": 14
+    }
+  },
+  "contenu": {
+    "tâches": [
+      "question-answering",
+      "conversational",
+      "text-generation"
+    ],
+    "taille": [
+      "100K<n<1M"
+    ],
+    "format": "Parquet",
+    "fichiers": {
+      "nombre": 1,
+      "liste": {
+        "default": {
+          "train": [
+            "https://huggingface.co/api/datasets/MBZUAI-Paris/Darija-SFT-Mixture/parquet/default/train/0.parquet",
+            "https://huggingface.co/api/datasets/MBZUAI-Paris/Darija-SFT-Mixture/parquet/default/train/1.parquet"
+          ]
+        }
+      }
+    }
+  }
+}
